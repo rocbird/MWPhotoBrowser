@@ -17,6 +17,9 @@
 
 static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
 
+@interface MWPhotoBrowser()
+@property (nonatomic, strong) AVPlayer *player;
+@end
 @implementation MWPhotoBrowser
 
 #pragma mark - Init
@@ -1224,21 +1227,29 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
 - (void)_playVideo:(NSURL *)videoURL atPhotoIndex:(NSUInteger)index {
 
     // Setup player
-    _currentVideoPlayerViewController = [[MPMoviePlayerViewController alloc] initWithContentURL:videoURL];
-    [_currentVideoPlayerViewController.moviePlayer prepareToPlay];
-    _currentVideoPlayerViewController.moviePlayer.shouldAutoplay = YES;
-    _currentVideoPlayerViewController.moviePlayer.scalingMode = MPMovieScalingModeAspectFit;
+//    let videoURL = URL(string: "https://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4")
+//    let player = AVPlayer(url: videoURL!)
+    
+    self.player = [[AVPlayer alloc]initWithURL:videoURL];
+    [self.player addObserver:self forKeyPath:@"status" options:0 context:nil];
+    self.player.actionAtItemEnd = AVPlayerActionAtItemEndNone;
+    
+    _currentVideoPlayerViewController = [AVPlayerViewController new];
+    _currentVideoPlayerViewController.player = self.player;
+//    [_currentVideoPlayerViewController.moviePlayer prepareToPlay];
+//    _currentVideoPlayerViewController.moviePlayer.shouldAutoplay = YES;
+//    _currentVideoPlayerViewController.moviePlayer.scalingMode = MPMovieScalingModeAspectFit;
     _currentVideoPlayerViewController.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
     
     // Remove the movie player view controller from the "playback did finish" notification observers
     // Observe ourselves so we can get it to use the crossfade transition
     [[NSNotificationCenter defaultCenter] removeObserver:_currentVideoPlayerViewController
-                                                    name:MPMoviePlayerPlaybackDidFinishNotification
-                                                  object:_currentVideoPlayerViewController.moviePlayer];
+                                                    name:AVPlayerItemDidPlayToEndTimeNotification
+                                                  object:_currentVideoPlayerViewController.player];
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(videoFinishedCallback:)
-                                                 name:MPMoviePlayerPlaybackDidFinishNotification
-                                               object:_currentVideoPlayerViewController.moviePlayer];
+                                                 name:AVPlayerItemDidPlayToEndTimeNotification
+                                               object:_currentVideoPlayerViewController.player];
 
     // Show
     [self presentViewController:_currentVideoPlayerViewController animated:YES completion:nil];
@@ -1249,14 +1260,14 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
     
     // Remove observer
     [[NSNotificationCenter defaultCenter] removeObserver:self
-                                                    name:MPMoviePlayerPlaybackDidFinishNotification
-                                                  object:_currentVideoPlayerViewController.moviePlayer];
+                                                    name:AVPlayerItemDidPlayToEndTimeNotification
+                                                  object:_currentVideoPlayerViewController.player];
     
     // Clear up
     [self clearCurrentVideo];
     
     // Dismiss
-    BOOL error = [[[notification userInfo] objectForKey:MPMoviePlayerPlaybackDidFinishReasonUserInfoKey] intValue] == MPMovieFinishReasonPlaybackError;
+    BOOL error = [[notification userInfo] objectForKey:AVPlayerItemFailedToPlayToEndTimeErrorKey] == AVPlayerItemFailedToPlayToEndTimeErrorKey;
     if (error) {
         // Error occured so dismiss with a delay incase error was immediate and we need to wait to dismiss the VC
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -1269,7 +1280,7 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
 }
 
 - (void)clearCurrentVideo {
-    [_currentVideoPlayerViewController.moviePlayer stop];
+    [_currentVideoPlayerViewController.player pause];
     [_currentVideoLoadingIndicator removeFromSuperview];
     _currentVideoPlayerViewController = nil;
     _currentVideoLoadingIndicator = nil;
@@ -1666,4 +1677,22 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
     self.navigationController.navigationBar.userInteractionEnabled = YES;
 }
 
+#pragma Observer for Player status.
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if (object == _player && [keyPath isEqualToString:@"status"]) {
+        if (_player.status == AVPlayerStatusFailed) {
+            NSLog(@"AVPlayer Failed");
+//            loader.hidden = true;
+        } else if (_player.status == AVPlayerStatusReadyToPlay) {
+            NSLog(@"AVPlayerStatusReadyToPlay");
+                [_player play];
+
+        } else if (_player.status == AVPlayerItemStatusUnknown) {
+            NSLog(@"AVPlayer Unknown");
+
+        }
+        [_player removeObserver:self forKeyPath:@"status" context:nil];
+    }
+
+}
 @end
